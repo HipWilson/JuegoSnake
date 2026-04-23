@@ -336,7 +336,38 @@
 <script type="text/babel">
   const { useState, useEffect, useCallback, useRef } = React;
 
-  ReactDOM.createRoot(document.getElementById('root')).render(<div style={{color:'white'}}>Estructura lista ✅</div>);
+  function Score({ score, best }) {
+    const [bump, setBump] = useState(false);
+    const prev = useRef(score);
+    useEffect(() => {
+      if (score !== prev.current) {
+        setBump(true);
+        const t = setTimeout(() => setBump(false), 160);
+        prev.current = score;
+        return () => clearTimeout(t);
+      }
+    }, [score]);
+
+    return (
+      <div className="panel">
+        <div className="panel-header">MARCADOR</div>
+        <div className="panel-row">
+          <span className="panel-label">Goles</span>
+          <span className={`panel-value ${bump ? 'bump' : ''}`}>
+            {String(score).padStart(2, '0')}
+          </span>
+        </div>
+        <div className="panel-row">
+          <span className="panel-label">Récord</span>
+          <span className="panel-value">{String(best).padStart(2, '0')}</span>
+        </div>
+      </div>
+    );
+  }
+
+  ReactDOM.createRoot(document.getElementById('root')).render(
+    <div style={{ display: 'flex', gap: 12 }}>
+      <Score score={0} best={0} />
+    </div>
+  );
 </script>
-</body>
-</html>
