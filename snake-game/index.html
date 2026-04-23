@@ -335,39 +335,183 @@
 
 <script type="text/babel">
   const { useState, useEffect, useCallback, useRef } = React;
-
+ 
+  /* ── Constants ───────────────────────────────────────────────────── */
+  const COLS = 20, ROWS = 20;
+ 
+  const LEVELS = [
+    { name: 'ROOKIE',   interval: 190, threshold: 0  },
+    { name: 'AMATEUR',  interval: 155, threshold: 5  },
+    { name: 'PRO',      interval: 118, threshold: 10 },
+    { name: 'ALL-STAR', interval:  88, threshold: 16 },
+    { name: 'LEGEND',   interval:  62, threshold: 23 },
+  ];
+ 
+  const DIRS = {
+    ArrowUp:   {x:0,y:-1}, ArrowDown: {x:0,y:1},
+    ArrowLeft: {x:-1,y:0}, ArrowRight:{x:1,y:0},
+    w:{x:0,y:-1}, W:{x:0,y:-1}, s:{x:0,y:1},  S:{x:0,y:1},
+    a:{x:-1,y:0}, A:{x:-1,y:0}, d:{x:1,y:0},  D:{x:1,y:0},
+  };
+ 
+  const randCell = (exc=[]) => {
+    let p;
+    do { p={x:Math.floor(Math.random()*COLS), y:Math.floor(Math.random()*ROWS)}; }
+    while (exc.some(e=>e.x===p.x&&e.y===p.y));
+    return p;
+  };
+ 
+  const initSnake = () => [{x:10,y:10},{x:9,y:10},{x:8,y:10}];
+ 
+  const getLevelIdx = sc => {
+    for (let i=LEVELS.length-1; i>=0; i--)
+      if (sc >= LEVELS[i].threshold) return i;
+    return 0;
+  };
+ 
+  /* ── Field SVG (cancha de fútbol) ────────────────────────────────── */
+  function FieldLines() {
+    const W=420, H=420, C=21;
+    const stripes = [];
+    for (let c=0; c<COLS; c+=4)
+      stripes.push(<rect key={c} x={c*C} y={0} width={C*2} height={H} fill="rgba(0,0,0,.08)" />);
+ 
+    return (
+      <svg className="field-svg" width={W} height={H} viewBox={`0 0 ${W} ${H}`}>
+        {stripes}
+        {/* border */}
+        <rect x="2" y="2" width={W-4} height={H-4} fill="none"
+          stroke="rgba(255,255,255,.22)" strokeWidth="1.5"/>
+        {/* halfway */}
+        <line x1={0} y1={H/2} x2={W} y2={H/2} stroke="rgba(255,255,255,.18)" strokeWidth="1"/>
+        {/* center circle */}
+        <circle cx={W/2} cy={H/2} r={C*2.6} fill="none"
+          stroke="rgba(255,255,255,.18)" strokeWidth="1"/>
+        <circle cx={W/2} cy={H/2} r="3" fill="rgba(255,255,255,.35)"/>
+        {/* top box */}
+        <rect x={(W/2)-(C*4.2)} y={0} width={C*8.4} height={C*3.8}
+          fill="none" stroke="rgba(255,255,255,.14)" strokeWidth="1"/>
+        {/* bottom box */}
+        <rect x={(W/2)-(C*4.2)} y={H-(C*3.8)} width={C*8.4} height={C*3.8}
+          fill="none" stroke="rgba(255,255,255,.14)" strokeWidth="1"/>
+        {/* corner arcs */}
+        <path d={`M ${C*1.4} 0 A ${C*1.4} ${C*1.4} 0 0 1 0 ${C*1.4}`}
+          fill="none" stroke="rgba(255,255,255,.14)" strokeWidth="1"/>
+        <path d={`M ${W-C*1.4} 0 A ${C*1.4} ${C*1.4} 0 0 0 ${W} ${C*1.4}`}
+          fill="none" stroke="rgba(255,255,255,.14)" strokeWidth="1"/>
+        <path d={`M 0 ${H-C*1.4} A ${C*1.4} ${C*1.4} 0 0 0 ${C*1.4} ${H}`}
+          fill="none" stroke="rgba(255,255,255,.14)" strokeWidth="1"/>
+        <path d={`M ${W} ${H-C*1.4} A ${C*1.4} ${C*1.4} 0 0 1 ${W-C*1.4} ${H}`}
+          fill="none" stroke="rgba(255,255,255,.14)" strokeWidth="1"/>
+      </svg>
+    );
+  }
+ 
+  /* ══════════════════════════════════════════════════════════════════ */
+  /*  SCORE                                                             */
+  /* ══════════════════════════════════════════════════════════════════ */
   function Score({ score, best }) {
     const [bump, setBump] = useState(false);
     const prev = useRef(score);
     useEffect(() => {
       if (score !== prev.current) {
         setBump(true);
-        const t = setTimeout(() => setBump(false), 160);
+        const t = setTimeout(()=>setBump(false), 160);
         prev.current = score;
-        return () => clearTimeout(t);
+        return ()=>clearTimeout(t);
       }
     }, [score]);
-
     return (
       <div className="panel">
         <div className="panel-header">MARCADOR</div>
         <div className="panel-row">
           <span className="panel-label">Goles</span>
-          <span className={`panel-value ${bump ? 'bump' : ''}`}>
-            {String(score).padStart(2, '0')}
-          </span>
+          <span className={`panel-value ${bump?'bump':''}`}>{String(score).padStart(2,'0')}</span>
         </div>
         <div className="panel-row">
           <span className="panel-label">Récord</span>
-          <span className="panel-value">{String(best).padStart(2, '0')}</span>
+          <span className="panel-value">{String(best).padStart(2,'0')}</span>
         </div>
       </div>
     );
   }
-
-  ReactDOM.createRoot(document.getElementById('root')).render(
-    <div style={{ display: 'flex', gap: 12 }}>
-      <Score score={0} best={0} />
-    </div>
-  );
-</script>
+   /* ══════════════════════════════════════════════════════════════════ */
+  /*  FOOD                                                              */
+  /* ══════════════════════════════════════════════════════════════════ */
+  function Food({ position }) {
+    return (
+      <div className="cell food"
+        style={{gridColumn: position.x+1, gridRow: position.y+1}}>
+        {/* SVG soccer ball */}
+        <svg className="ball" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg">
+          <circle cx="10" cy="10" r="9" fill="white" stroke="#ccc" strokeWidth=".4"/>
+          <polygon points="10,2.5 12.8,6 10,9.5 7.2,6" fill="#222"/>
+          <polygon points="10,17.5 12.8,14 10,10.5 7.2,14" fill="#222"/>
+          <polygon points="2.5,10 6,7.2 9.5,10 6,12.8" fill="#222"/>
+          <polygon points="17.5,10 14,7.2 10.5,10 14,12.8" fill="#222"/>
+          <polygon points="10,9.5 12.8,6 17.5,10 14,12.8 10,10.5" fill="#444" opacity=".3"/>
+        </svg>
+      </div>
+    );
+  }
+ 
+  /* ══════════════════════════════════════════════════════════════════ */
+  /*  SNAKE                                                             */
+  /* ══════════════════════════════════════════════════════════════════ */
+  function Snake({ segments }) {
+    return (
+      <>
+        {segments.map((seg, i) => (
+          <div
+            key={`${seg.x}-${seg.y}-${i}`}
+            className={`cell ${i===0 ? 'snake-head' : 'snake'}`}
+            style={{gridColumn: seg.x+1, gridRow: seg.y+1}}
+          />
+        ))}
+      </>
+    );
+  }
+ 
+  /* ══════════════════════════════════════════════════════════════════ */
+  /*  BOARD                                                             */
+  /* ══════════════════════════════════════════════════════════════════ */
+  function Board({ snake, food, gameState, score, best, onStart }) {
+    return (
+      <div className="board-wrap">
+        <div className="board">
+          <FieldLines />
+          <Snake segments={snake} />
+          <Food position={food} />
+ 
+          {gameState === 'idle' && (
+            <div className="overlay">
+              <div className="ov-badge">⚽ stadium snake ⚽</div>
+              <div className="ov-title yellow">FIELD<br/>RUNNER</div>
+              <div className="ov-info">Recoge balones · Evita las líneas</div>
+              <button className="btn" onClick={onStart}>PATEAR PARA JUGAR</button>
+            </div>
+          )}
+ 
+          {gameState === 'over' && (
+            <div className="overlay">
+              <div className="ov-badge">🟥 pitido final</div>
+              <div className="ov-title red">FUERA<br/>DE CAMPO</div>
+              <div className="ov-info">
+                Goles: <em>{score}</em>&nbsp;&nbsp;|&nbsp;&nbsp;Récord: <em>{best}</em>
+              </div>
+              <button className="btn" onClick={onStart}>SEGUNDO TIEMPO</button>
+            </div>
+          )}
+        </div>
+        {/* Ticker news bar */}
+        <div className="ticker">
+          <span className="ticker-inner">
+            ⚽ &nbsp; FIELD RUNNER FC &nbsp;·&nbsp; TEMPORADA EN CURSO &nbsp;·&nbsp;
+            RECOGE EL BALÓN PARA ANOTAR &nbsp;·&nbsp; ¡CUIDADO CON LAS PAREDES Y CONTIGO MISMO! &nbsp;·&nbsp;
+            NIVELES: ROOKIE → AMATEUR → PRO → ALL-STAR → LEGEND &nbsp;·&nbsp;
+            USA WASD O LAS FLECHAS PARA MOVERTE &nbsp;·&nbsp; ⚽ &nbsp;
+          </span>
+        </div>
+      </div>
+    );
+  }
