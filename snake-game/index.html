@@ -54,6 +54,7 @@
       gap: 18px;
     }
 
+        /* ── Sidebar ────────────────────────────────────────────────────── */
     .sidebar {
       display: flex;
       flex-direction: column;
@@ -109,6 +110,7 @@
       text-shadow: 0 0 20px #fff;
     }
 
+    /* ── Level panel ────────────────────────────────────────────────── */
     .level-content {
       padding: 8px 10px 10px;
       display: flex;
@@ -136,6 +138,7 @@
       border-color: var(--accent);
     }
 
+   /* ── Controls panel ─────────────────────────────────────────────── */
     .controls-content {
       padding: 8px 8px 10px;
       display: flex;
@@ -307,6 +310,7 @@
     }
     .btn:active { transform: translateY(0px); }
 
+    /* ── News ticker ────────────────────────────────────────────────── */
     .ticker {
       width: 420px;
       background: var(--accent);
@@ -369,7 +373,7 @@
     return 0;
   };
  
-  /* ── Field SVG (cancha de fútbol) ────────────────────────────────── */
+  /* ── Field SVG ────────────────────────────────── */
   function FieldLines() {
     const W=420, H=420, C=21;
     const stripes = [];
@@ -515,3 +519,171 @@
       </div>
     );
   }
+   /* ══════════════════════════════════════════════════════════════════ */
+  /*  LEVEL PANEL                                                       */
+  /* ══════════════════════════════════════════════════════════════════ */
+  function LevelPanel({ levelIdx }) {
+    return (
+      <div className="panel">
+        <div className="panel-header">DIVISIÓN</div>
+        <div className="level-content">
+          <span className="level-name">{LEVELS[levelIdx].name}</span>
+          <div className="pips">
+            {LEVELS.map((_,i) => (
+              <div key={i} className={`pip ${i<=levelIdx?'on':''}`} />
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  }
+ 
+  /* ══════════════════════════════════════════════════════════════════ */
+  /*  APP                                       */
+  /* ══════════════════════════════════════════════════════════════════ */
+  function App() {
+    const [snake,     setSnake]     = useState(initSnake());
+    const [food,      setFood]      = useState({x:5,y:5});
+    const [gameState, setGameState] = useState('idle');
+    const [score,     setScore]     = useState(0);
+    const [best,      setBest]      = useState(0);
+ 
+    /* refs for game loop (avoid stale closures) */
+    const dirRef   = useRef({x:1,y:0});
+    const queueRef = useRef([]);
+    const snakeRef = useRef(initSnake());
+    const foodRef  = useRef({x:5,y:5});
+    const scoreRef = useRef(0);
+    const stateRef = useRef('idle');
+ 
+    const levelIdx = getLevelIdx(score);
+ 
+    /* ── Start / Restart ── */
+    const startGame = useCallback(() => {
+      const s = initSnake();
+      const f = randCell(s);
+      const d = {x:1,y:0};
+      snakeRef.current = s;
+      foodRef.current  = f;
+      dirRef.current   = d;
+      queueRef.current = [];
+      scoreRef.current = 0;
+      stateRef.current = 'playing';
+      setSnake(s); setFood(f);
+      setScore(0); setGameState('playing');
+    }, []);
+ 
+    /* ── Keyboard ── */
+    useEffect(() => {
+      const handler = e => {
+        const nd = DIRS[e.key];
+        if (!nd) return;
+        if (['ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(e.key))
+          e.preventDefault();
+        if (stateRef.current !== 'playing') return;
+        const last = queueRef.current.length
+          ? queueRef.current[queueRef.current.length-1]
+          : dirRef.current;
+        if (nd.x===-last.x && nd.y===-last.y) return;
+        if (queueRef.current.length < 2) queueRef.current.push(nd);
+      };
+      window.addEventListener('keydown', handler);
+      return () => window.removeEventListener('keydown', handler);
+    }, []);
+ 
+    /* ── Game loop ── */
+    useEffect(() => {
+      if (gameState !== 'playing') return;
+      const ms = LEVELS[levelIdx].interval;
+ 
+      const tick = setInterval(() => {
+        if (stateRef.current !== 'playing') return;
+        if (queueRef.current.length > 0)
+          dirRef.current = queueRef.current.shift();
+ 
+        const dir  = dirRef.current;
+        const prev = snakeRef.current;
+        const head = {x: prev[0].x+dir.x, y: prev[0].y+dir.y};
+ 
+        /* wall collision */
+        if (head.x<0||head.x>=COLS||head.y<0||head.y>=ROWS) {
+          stateRef.current = 'over';
+          setBest(b=>Math.max(b, scoreRef.current));
+          setGameState('over');
+          return;
+        }
+        /* self collision */
+        if (prev.slice(1).some(s=>s.x===head.x&&s.y===head.y)) {
+          stateRef.current = 'over';
+          setBest(b=>Math.max(b, scoreRef.current));
+          setGameState('over');
+          return;
+        }
+ 
+        const ate = head.x===foodRef.current.x && head.y===foodRef.current.y;
+        const newSnake = ate ? [head,...prev] : [head,...prev.slice(0,-1)];
+        snakeRef.current = newSnake;
+ 
+        if (ate) {
+          const nf = randCell(newSnake);
+          foodRef.current  = nf;
+          scoreRef.current += 1;
+          setFood(nf);
+          setScore(scoreRef.current);
+        }
+        setSnake([...newSnake]);
+      }, ms);
+ 
+      return () => clearInterval(tick);
+    }, [gameState, levelIdx]);
+ 
+    return (
+      <div className="layout">
+        {/* Sidebar */}
+        <div className="sidebar">
+          <Score score={score} best={best} />
+          <LevelPanel levelIdx={levelIdx} />
+          <div className="panel">
+            <div className="panel-header">CONTROLES</div>
+            <div className="controls-content">
+              <div className="key-row"><span className="kbd">W</span></div>
+              <div className="key-row">
+                <span className="kbd">A</span>
+                <span className="kbd">S</span>
+                <span className="kbd">D</span>
+              </div>
+              <hr className="controls-sep"/>
+              <div className="key-row"><span className="kbd">↑</span></div>
+              <div className="key-row">
+                <span className="kbd">←</span>
+                <span className="kbd">↓</span>
+                <span className="kbd">→</span>
+              </div>
+            </div>
+          </div>
+        </div>
+ 
+        {/* Main */}
+        <div className="main-col">
+          <div>
+            <div className="game-title">FIELD RUNNER</div>
+            <div className="game-sub">Stadium Snake Edition</div>
+          </div>
+          <Board
+            snake={snake}
+            food={food}
+            gameState={gameState}
+            score={score}
+            best={best}
+            onStart={startGame}
+          />
+        </div>
+      </div>
+    );
+  }
+ 
+  ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+</script>
+</body>
+</html>
+ 
